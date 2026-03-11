@@ -2,7 +2,9 @@ import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.utils.chat_action import ChatActionSender
+from aiogram import F
 from google import genai
+from google.genai import types as genai_types
 
 from config import TOKEN, CHAT_ID, GEMINI_API_KEY
 
@@ -30,6 +32,34 @@ async def reset_handler(message: types.Message):
     global chat_session
     chat_session = client.aio.chats.create(model= MODEL_NAME, config={'system_instruction': SYSTEM_PROMPT})
     await message.answer("History has been cleaned")
+
+@dp.message(F.photo)
+async def handle_photo(message: types.Message):
+    if int(message.from_user.id) != int(CHAT_ID):
+        return
+
+    chat = await get_chat()
+
+    async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+        try:
+            photo = message.photo[-1]
+            file_io = await bot.download(photo)
+            
+            image_part = genai_types.Part.from_bytes(
+                data=file_io.getvalue(), 
+                mime_type="image/jpeg"
+            )
+
+            user_text = message.caption if message.caption else "What is in this photo?"
+
+            response = await chat.send_message([user_text, image_part])
+            
+            clean_text = response.text.replace("**", "").replace("__", "").replace("#", "")
+            await message.answer(clean_text)
+
+        except Exception as e:
+            print(f"Error Gemini Photo: {e}")
+            await message.answer("I couldn't see this photo...")
 
 @dp.message()
 async def handle_any_message(message: types.Message):
